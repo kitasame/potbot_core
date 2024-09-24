@@ -60,19 +60,22 @@
 #include <base_local_planner/twirling_cost_function.h>
 #include <base_local_planner/simple_scored_sampling_planner.h>
 
-//追加項目
+/*追加項目*/
 #include <geometry_msgs/Point.h>
 
 #include <nav_msgs/Path.h>
+/*ここまで*/
 
 namespace dwa_local_planner {
 
+/*追加項目 */
   struct Pedestrian {
     double x;
     double y;
     double orientation;
     double lf;  // 前方パーソナルスペースの長軸
     double ls;  // パーソナルスペースの短軸
+/*ここまで*/
 };
 
   /**
@@ -159,7 +162,6 @@ namespace dwa_local_planner {
     private:
 
       // 新しく追加するメンバー関数
-
       base_local_planner::SimpleScoredSamplingPlanner scored_sampling_planner_;
 
       double calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj);
@@ -167,12 +169,9 @@ namespace dwa_local_planner {
       double calculateCostFromInvasion(double invasion);
       std::vector<Pedestrian> getPedestrianPositions();
 
-      // 新しく追加するメンバー変数
       double lf_scale_;
       double ls_scale_;
       double ps_weight_;
-
-
       //ここまでが追加変数
 
       base_local_planner::LocalPlannerUtil *planner_util_;

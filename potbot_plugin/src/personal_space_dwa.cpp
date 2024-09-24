@@ -50,7 +50,14 @@
 
 namespace dwa_local_planner {
   
-     
+//追加箇所
+struct Pedestrian {
+  double x;
+  double y;
+  double orientation;
+  double lf;  // 前方パーソナルスペースの長軸
+  double ls;  // パーソナルスペースの短軸
+};  //ここまで     
 
   void DWAPlanner::reconfigure(DWAPlannerConfig &config)  //パラメータを設定しているだけ
   {
@@ -59,6 +66,7 @@ namespace dwa_local_planner {
         lf_scale_ = config.lf_scale;
         ls_scale_ = config.ls_scale;
         ps_weight_ = config.ps_weight;
+    // ここまで
 
     boost::mutex::scoped_lock l(configuration_mutex_);
 
@@ -135,11 +143,12 @@ namespace dwa_local_planner {
     goal_front_costs_.setStopOnFailure( false );
     alignment_costs_.setStopOnFailure( false );
 
-        // 新しいパラメータの初期化
+      // 新しいパラメータの初期化
       ros::NodeHandle private_nh("~/" + name);
       private_nh.param("lf_scale", lf_scale_, 1.2);
       private_nh.param("ls_scale", ls_scale_, 0.8);
       private_nh.param("ps_weight", ps_weight_, 0.5);
+      // ここまで
 
     //Assuming this planner is being run within the navigation stack, we can
     //just do an upward search for the frequency at which its being run. This
@@ -324,6 +333,7 @@ namespace dwa_local_planner {
     base_local_planner::LocalPlannerLimits limits = planner_util_->getCurrentLimits();
 
     // パーソナルスペースコストを考慮するためのカスタムスコア関数を追加
+    // ここから
     auto custom_score = [this](base_local_planner::Trajectory& traj)  -> double {
     double base_score = scored_sampling_planner_.scoreTrajectory(traj,DBL_MAX);
     if (base_score < 0) {
@@ -336,6 +346,7 @@ namespace dwa_local_planner {
     // カスタムスコア関数を使用してベストトラジェクトリを見つける
     std::vector<base_local_planner::Trajectory> all_explored;
     bool found_legal = scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
+    // ここまで
 
     // prepare cost functions and generators for this run
     generator_.initialise(pos,
@@ -421,6 +432,7 @@ namespace dwa_local_planner {
   }
 
 //追加したコード
+// ここから
 double DWAPlanner::calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj) {
   double max_cost = 0.0;
   std::vector<Pedestrian> pedestrians = getPedestrianPositions();
@@ -473,5 +485,6 @@ std::vector<Pedestrian> DWAPlanner::getPedestrianPositions() {
     {3.0, 4.0, M_PI / 2, 1.2, 0.8}
   };
 }
- 
+// ここまで
+
 };
