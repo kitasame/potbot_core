@@ -468,6 +468,7 @@ double DWAPlanner::calculatePersonalSpaceInvasion(const geometry_msgs::Point& po
   }
 }
 
+
 double DWAPlanner::calculateCostFromInvasion(double invasion) {
   if (invasion <= 1.0) {
     return 254.0;  // 最大コスト（障害物と同等）
