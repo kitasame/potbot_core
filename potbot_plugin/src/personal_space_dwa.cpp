@@ -48,18 +48,9 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 
-namespace dwa_local_planner {
-  
-//追加箇所
-struct Pedestrian {
-  double x;
-  double y;
-  double orientation;
-  double lf;  // 前方パーソナルスペースの長軸
-  double ls;  // パーソナルスペースの短軸
-};  //ここまで     
+namespace potbot_nav {
 
-  void DWAPlanner::reconfigure(DWAPlannerConfig &config)  //パラメータを設定しているだけ
+  void PersonalSpaceDWA::reconfigure(potbot_plugin::PersonalSpaceDWAConfig &config)  //パラメータを設定しているだけ
   {
 
     // パーソナルスペースのパラメータを追加
@@ -131,7 +122,7 @@ struct Pedestrian {
 
   }
 
-  DWAPlanner::DWAPlanner(std::string name, base_local_planner::LocalPlannerUtil *planner_util) :
+  PersonalSpaceDWA::PersonalSpaceDWA(std::string name, base_local_planner::LocalPlannerUtil *planner_util) :
       planner_util_(planner_util),
       obstacle_costs_(planner_util->getCostmap()),
       path_costs_(planner_util->getCostmap()),
@@ -208,7 +199,7 @@ struct Pedestrian {
   }
 
   // used for visualization only, total_costs are not really total costs
-  bool DWAPlanner::getCellCosts(int cx, int cy, float &path_cost, float &goal_cost, float &occ_cost, float &total_cost) {
+  bool PersonalSpaceDWA::getCellCosts(int cx, int cy, float &path_cost, float &goal_cost, float &occ_cost, float &total_cost) {
 
     path_cost = path_costs_.getCellCosts(cx, cy);
     goal_cost = goal_costs_.getCellCosts(cx, cy);
@@ -226,7 +217,7 @@ struct Pedestrian {
     return true;
   }
 
-  bool DWAPlanner::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan) {
+  bool PersonalSpaceDWA::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan) {
     oscillation_costs_.resetOscillationFlags();
     return planner_util_->setPlan(orig_global_plan);
   }
@@ -235,7 +226,7 @@ struct Pedestrian {
    * This function is used when other strategies are to be applied,
    * but the cost functions for obstacles are to be reused.
    */
-  bool DWAPlanner::checkTrajectory(
+  bool PersonalSpaceDWA::checkTrajectory(
       Eigen::Vector3f pos,
       Eigen::Vector3f vel,
       Eigen::Vector3f vel_samples){
@@ -262,7 +253,7 @@ struct Pedestrian {
   }
 
 
-  void DWAPlanner::updatePlanAndLocalCosts(
+  void PersonalSpaceDWA::updatePlanAndLocalCosts(
       const geometry_msgs::PoseStamped& global_pose,
       const std::vector<geometry_msgs::PoseStamped>& new_plan,
       const std::vector<geometry_msgs::Point>& footprint_spec) {
@@ -316,7 +307,7 @@ struct Pedestrian {
   /*
    * given the current state of the robot, find a good trajectory
    */
-  base_local_planner::Trajectory DWAPlanner::findBestPath(  //DWAの評価関数かも？ 
+  base_local_planner::Trajectory PersonalSpaceDWA::findBestPath(  //DWAの評価関数かも？ 
       const geometry_msgs::PoseStamped& global_pose,  //世界座標系でのロボットの位置
       const geometry_msgs::PoseStamped& global_vel,
       geometry_msgs::PoseStamped& drive_velocities)  //評価式を最大化する速度、角速度を代入
@@ -433,7 +424,7 @@ struct Pedestrian {
 
 //追加したコード
 // ここから
-double DWAPlanner::calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj) {
+double PersonalSpaceDWA::calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj) {
   double max_cost = 0.0;
   std::vector<Pedestrian> pedestrians = getPedestrianPositions();
 
@@ -453,7 +444,7 @@ double DWAPlanner::calculatePersonalSpaceCost(const base_local_planner::Trajecto
   return max_cost;
 }
 
-double DWAPlanner::calculatePersonalSpaceInvasion(const geometry_msgs::Point& point, const Pedestrian& pedestrian) {
+double PersonalSpaceDWA::calculatePersonalSpaceInvasion(const geometry_msgs::Point& point, const Pedestrian& pedestrian) {
   double dx = point.x - pedestrian.x;
   double dy = point.y - pedestrian.y;
   double theta = std::atan2(dy, dx) - pedestrian.orientation;
@@ -468,8 +459,7 @@ double DWAPlanner::calculatePersonalSpaceInvasion(const geometry_msgs::Point& po
   }
 }
 
-
-double DWAPlanner::calculateCostFromInvasion(double invasion) {
+double PersonalSpaceDWA::calculateCostFromInvasion(double invasion) {
   if (invasion <= 1.0) {
     return 254.0;  // 最大コスト（障害物と同等）
   } else {
@@ -477,7 +467,7 @@ double DWAPlanner::calculateCostFromInvasion(double invasion) {
   }
 }
 
-std::vector<Pedestrian> DWAPlanner::getPedestrianPositions() {
+std::vector<Pedestrian> PersonalSpaceDWA::getPedestrianPositions() {
   // この関数は環境に応じて実装する必要があります
   // 例: センサーデータや他のROSノードからの情報を使用
   // ここでは仮のデータを返すだけの実装としています

@@ -47,14 +47,14 @@
 #include <nav_msgs/Path.h>
 #include <tf2/utils.h>
 
-#include <nav_core/parameter_magic.h>
+// #include <nav_core/parameter_magic.h>
 
 //register this planner as a BaseLocalPlanner plugin
-PLUGINLIB_EXPORT_CLASS(dwa_local_planner::DWAPlannerROS, nav_core::BaseLocalPlanner)
+PLUGINLIB_EXPORT_CLASS(potbot_nav::PersonalSpaceDWAROS, nav_core::BaseLocalPlanner)
 
-namespace dwa_local_planner {
+namespace potbot_nav {
 
-  void DWAPlannerROS::reconfigureCB(DWAPlannerConfig &config, uint32_t level) {
+  void PersonalSpaceDWAROS::reconfigureCB(potbot_plugin::PersonalSpaceDWAConfig &config, uint32_t level) {
       if (setup_ && config.restore_defaults) {
         config = default_config_;
         config.restore_defaults = false;
@@ -89,12 +89,12 @@ namespace dwa_local_planner {
       dp_->reconfigure(config);
   }
 
-  DWAPlannerROS::DWAPlannerROS() : initialized_(false),
+  PersonalSpaceDWAROS::PersonalSpaceDWAROS() : initialized_(false),
       odom_helper_("odom"), setup_(false) {
 
   }
 
-  void DWAPlannerROS::initialize(
+  void PersonalSpaceDWAROS::initialize(
       std::string name,
       tf2_ros::Buffer* tf,
       costmap_2d::Costmap2DROS* costmap_ros) {
@@ -113,7 +113,7 @@ namespace dwa_local_planner {
       planner_util_.initialize(tf, costmap, costmap_ros_->getGlobalFrameID());
 
       //create the actual planner that we'll use.. it'll configure itself from the parameter server
-      dp_ = boost::shared_ptr<DWAPlanner>(new DWAPlanner(name, &planner_util_));
+      dp_ = boost::shared_ptr<PersonalSpaceDWA>(new PersonalSpaceDWA(name, &planner_util_));
 
       if( private_nh.getParam( "odom_topic", odom_topic_ ))
       {
@@ -123,15 +123,15 @@ namespace dwa_local_planner {
       initialized_ = true;
 
       // Warn about deprecated parameters -- remove this block in N-turtle
-      nav_core::warnRenamedParameter(private_nh, "max_vel_trans", "max_trans_vel");
-      nav_core::warnRenamedParameter(private_nh, "min_vel_trans", "min_trans_vel");
-      nav_core::warnRenamedParameter(private_nh, "max_vel_theta", "max_rot_vel");
-      nav_core::warnRenamedParameter(private_nh, "min_vel_theta", "min_rot_vel");
-      nav_core::warnRenamedParameter(private_nh, "acc_lim_trans", "acc_limit_trans");
-      nav_core::warnRenamedParameter(private_nh, "theta_stopped_vel", "rot_stopped_vel");
+      // nav_core::warnRenamedParameter(private_nh, "max_vel_trans", "max_trans_vel");
+      // nav_core::warnRenamedParameter(private_nh, "min_vel_trans", "min_trans_vel");
+      // nav_core::warnRenamedParameter(private_nh, "max_vel_theta", "max_rot_vel");
+      // nav_core::warnRenamedParameter(private_nh, "min_vel_theta", "min_rot_vel");
+      // nav_core::warnRenamedParameter(private_nh, "acc_lim_trans", "acc_limit_trans");
+      // nav_core::warnRenamedParameter(private_nh, "theta_stopped_vel", "rot_stopped_vel");
 
-      dsrv_ = new dynamic_reconfigure::Server<DWAPlannerConfig>(private_nh);
-      dynamic_reconfigure::Server<DWAPlannerConfig>::CallbackType cb = [this](auto& config, auto level){ reconfigureCB(config, level); };
+      dsrv_ = new dynamic_reconfigure::Server<potbot_plugin::PersonalSpaceDWAConfig>(private_nh);
+      dynamic_reconfigure::Server<potbot_plugin::PersonalSpaceDWAConfig>::CallbackType cb = [this](auto& config, auto level){ reconfigureCB(config, level); };
       dsrv_->setCallback(cb);
     }
     else{
@@ -139,7 +139,7 @@ namespace dwa_local_planner {
     }
   }
   
-  bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan) {
+  bool PersonalSpaceDWAROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan) {
     if (! isInitialized()) {
       ROS_ERROR("This planner has not been initialized, please call initialize() before using this planner");
       return false;
@@ -151,7 +151,7 @@ namespace dwa_local_planner {
     return dp_->setPlan(orig_global_plan);
   }
 
-  bool DWAPlannerROS::isGoalReached() {
+  bool PersonalSpaceDWAROS::isGoalReached() {
     if (! isInitialized()) {
       ROS_ERROR("This planner has not been initialized, please call initialize() before using this planner");
       return false;
@@ -169,23 +169,23 @@ namespace dwa_local_planner {
     }
   }
 
-  void DWAPlannerROS::publishLocalPlan(std::vector<geometry_msgs::PoseStamped>& path) {
+  void PersonalSpaceDWAROS::publishLocalPlan(std::vector<geometry_msgs::PoseStamped>& path) {
     base_local_planner::publishPlan(path, l_plan_pub_);
   }
 
 
-  void DWAPlannerROS::publishGlobalPlan(std::vector<geometry_msgs::PoseStamped>& path) {
+  void PersonalSpaceDWAROS::publishGlobalPlan(std::vector<geometry_msgs::PoseStamped>& path) {
     base_local_planner::publishPlan(path, g_plan_pub_);
   }
 
-  DWAPlannerROS::~DWAPlannerROS(){
+  PersonalSpaceDWAROS::~PersonalSpaceDWAROS(){
     //make sure to clean things up
     delete dsrv_;
   }
 
 
 
-  bool DWAPlannerROS::dwaComputeVelocityCommands(geometry_msgs::PoseStamped &global_pose, geometry_msgs::Twist& cmd_vel) {
+  bool PersonalSpaceDWAROS::dwaComputeVelocityCommands(geometry_msgs::PoseStamped &global_pose, geometry_msgs::Twist& cmd_vel) {
     // dynamic window sampling approach to get useful velocity commands
     if(! isInitialized()){
       ROS_ERROR("This planner has not been initialized, please call initialize() before using this planner");
@@ -225,14 +225,14 @@ namespace dwa_local_planner {
     //if we cannot move... tell someone
     std::vector<geometry_msgs::PoseStamped> local_plan;
     if(path.cost_ < 0) {
-      ROS_DEBUG_NAMED("dwa_local_planner",
+      ROS_DEBUG_NAMED("potbot_nav",
           "The dwa local planner failed to find a valid plan, cost functions discarded all candidates. This can mean there is an obstacle too close to the robot.");
       local_plan.clear();
       publishLocalPlan(local_plan);
       return false;
     }
 
-    ROS_DEBUG_NAMED("dwa_local_planner", "A valid velocity command of (%.2f, %.2f, %.2f) was found for this cycle.", 
+    ROS_DEBUG_NAMED("potbot_nav", "A valid velocity command of (%.2f, %.2f, %.2f) was found for this cycle.", 
                     cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z);
 
     // Fill out the local plan
@@ -261,7 +261,7 @@ namespace dwa_local_planner {
 
 
 
-  bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel) {
+  bool PersonalSpaceDWAROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel) {
     // dispatches to either dwa sampling control or stop and rotate control, depending on whether we have been close enough to goal
     if ( ! costmap_ros_->getRobotPose(current_pose_)) {
       ROS_ERROR("Could not get robot pose");
@@ -275,10 +275,10 @@ namespace dwa_local_planner {
 
     //if the global plan passed in is empty... we won't do anything
     if(transformed_plan.empty()) {
-      ROS_WARN_NAMED("dwa_local_planner", "Received an empty transformed plan.");
+      ROS_WARN_NAMED("potbot_nav", "Received an empty transformed plan.");
       return false;
     }
-    ROS_DEBUG_NAMED("dwa_local_planner", "Received a transformed plan with %zu points.", transformed_plan.size());
+    ROS_DEBUG_NAMED("potbot_nav", "Received a transformed plan with %zu points.", transformed_plan.size());
 
     // update plan in dwa_planner even if we just stop and rotate, to allow checkTrajectory
     dp_->updatePlanAndLocalCosts(current_pose_, transformed_plan, costmap_ros_->getRobotFootprint());
@@ -303,7 +303,7 @@ namespace dwa_local_planner {
       if (isOk) {
         publishGlobalPlan(transformed_plan);
       } else {
-        ROS_WARN_NAMED("dwa_local_planner", "DWA planner failed to produce path.");
+        ROS_WARN_NAMED("potbot_nav", "DWA planner failed to produce path.");
         std::vector<geometry_msgs::PoseStamped> empty_plan;
         publishGlobalPlan(empty_plan);
       }

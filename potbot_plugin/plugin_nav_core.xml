@@ -5,4 +5,7 @@
   <class name="potbot_nav/PotbotLocalPlanner" type="potbot_nav::PotbotLocalPlanner" base_class_type="nav_core::BaseLocalPlanner">
     <description>This is a nav_core::BaseLocalPlanner plugin.</description>
   </class>
+  <class name="potbot_nav/PersonalSpaceDWA" type="potbot_nav::PersonalSpaceDWAROS" base_class_type="nav_core::BaseLocalPlanner">
+    <description>This is a nav_core::BaseLocalPlanner plugin.</description>
+  </class>
 </library>

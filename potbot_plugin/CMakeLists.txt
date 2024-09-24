@@ -30,6 +30,7 @@ generate_dynamic_reconfigure_options(
   cfg/TimeState.cfg
   cfg/OptimalPathFollower.cfg
   cfg/TraditionalAPF.cfg
+  cfg/PersonalSpaceDWA.cfg
 )
 
 catkin_package(
@@ -61,6 +62,8 @@ add_library(${PROJECT_NAME}
   src/time_state.cpp
   src/optimal_path_follower.cpp
   src/traditional_apf.cpp
+  src/personal_space_dwa.cpp
+  src/personal_space_dwa_ros.cpp
 )
 add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})

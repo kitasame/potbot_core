@@ -66,7 +66,7 @@
 #include <nav_msgs/Path.h>
 /*ここまで*/
 
-namespace dwa_local_planner {
+namespace potbot_nav {
 
 /*追加項目 */
   struct Pedestrian {
@@ -79,10 +79,10 @@ namespace dwa_local_planner {
 };
 
   /**
-   * @class DWAPlanner
+   * @class PersonalSpaceDWA
    * @brief A class implementing a local planner using the Dynamic Window Approach
    */
-  class DWAPlanner {
+  class PersonalSpaceDWA {
     public:
       /**
        * @brief  Constructor for the planner
@@ -90,12 +90,12 @@ namespace dwa_local_planner {
        * @param costmap_ros A pointer to the costmap instance the planner should use
        * @param global_frame the frame id of the tf frame to use
        */
-      DWAPlanner(std::string name, base_local_planner::LocalPlannerUtil *planner_util);
+      PersonalSpaceDWA(std::string name, base_local_planner::LocalPlannerUtil *planner_util);
 
       /**
        * @brief Reconfigures the trajectory planner
        */
-      void reconfigure(DWAPlannerConfig &cfg);
+      void reconfigure(potbot_plugin::PersonalSpaceDWAConfig &cfg);
 
       /**
        * @brief  Check if a trajectory is legal for a position/velocity pair
