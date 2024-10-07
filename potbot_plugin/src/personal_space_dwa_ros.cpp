@@ -98,6 +98,7 @@ namespace potbot_nav {
       std::string name,
       tf2_ros::Buffer* tf,
       costmap_2d::Costmap2DROS* costmap_ros) {
+    ROS_INFO("PersonalSpaceDWA entry point");
     if (! isInitialized()) {
 
       ros::NodeHandle private_nh("~/" + name);

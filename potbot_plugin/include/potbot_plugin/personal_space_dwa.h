@@ -72,7 +72,7 @@ namespace potbot_nav {
   struct Pedestrian {
     double x;
     double y;
-    double orientation;
+    double yaw; 
     double lf;  // 前方パーソナルスペースの長軸
     double ls;  // パーソナルスペースの短軸
 /*ここまで*/

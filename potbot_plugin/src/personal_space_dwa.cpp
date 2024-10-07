@@ -130,16 +130,16 @@ namespace potbot_nav {
       goal_front_costs_(planner_util->getCostmap(), 0.0, 0.0, true),
       alignment_costs_(planner_util->getCostmap())
   {
-
+    
     goal_front_costs_.setStopOnFailure( false );
     alignment_costs_.setStopOnFailure( false );
 
-      // 新しいパラメータの初期化
-      ros::NodeHandle private_nh("~/" + name);
-      private_nh.param("lf_scale", lf_scale_, 1.2);
-      private_nh.param("ls_scale", ls_scale_, 0.8);
-      private_nh.param("ps_weight", ps_weight_, 0.5);
-      // ここまで
+    // 新しいパラメータの初期化
+    ros::NodeHandle private_nh("~/" + name);
+    private_nh.param("lf_scale", lf_scale_, 1.2);
+    private_nh.param("ls_scale", ls_scale_, 0.8);
+    private_nh.param("ps_weight", ps_weight_, 0.5);
+    // ここまで
 
     //Assuming this planner is being run within the navigation stack, we can
     //just do an upward search for the frequency at which its being run. This
@@ -447,7 +447,7 @@ double PersonalSpaceDWA::calculatePersonalSpaceCost(const base_local_planner::Tr
 double PersonalSpaceDWA::calculatePersonalSpaceInvasion(const geometry_msgs::Point& point, const Pedestrian& pedestrian) {
   double dx = point.x - pedestrian.x;
   double dy = point.y - pedestrian.y;
-  double theta = std::atan2(dy, dx) - pedestrian.orientation;
+  double theta = std::atan2(dy, dx) - pedestrian.yaw;
 
   if (std::abs(theta) <= M_PI / 2) {
     // 歩行者の前方の楕円形パーソナルスペース
@@ -467,15 +467,26 @@ double PersonalSpaceDWA::calculateCostFromInvasion(double invasion) {
   }
 }
 
-std::vector<Pedestrian> PersonalSpaceDWA::getPedestrianPositions() {
-  // この関数は環境に応じて実装する必要があります
-  // 例: センサーデータや他のROSノードからの情報を使用
-  // ここでは仮のデータを返すだけの実装としています
-  return {
-    {1.0, 2.0, 0.0, 1.2, 0.8},
-    {3.0, 4.0, M_PI / 2, 1.2, 0.8}
-  };
-}
-// ここまで
+// std::vector<Pedestrian> PersonalSpaceDWA::getPedestrianPositions() {
+//   // この関数は環境に応じて実装する必要があります
+//   // 例: センサーデータや他のROSノードからの情報を使用
+//   // ここでは仮のデータを返すだけの実装としています
+//   std::vector<Pedestrian> pre_vec;
+//   Pedestrian p0;
+//   p0.x=1.0;
+//   p0.y=2.0;
+//   p0.yaw=0.0;
+//   p0.lf=1.2;
+//   p0.ls=0.8;
+
+//   pre_vec.push_back(p0);
+//   return pre_vec;
+
+//   // return {
+//   //   {1.0, 2.0, 0.0, 1.2, 0.8},
+//   //   {3.0, 4.0, M_PI / 2, 1.2, 0.8}
+//   // };
+// }
+// // ここまで
 
 };

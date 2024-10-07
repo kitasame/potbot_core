@@ -77,7 +77,7 @@ namespace potbot_nav {
        * @param costmap The cost map to use for assigning costs to trajectories
        */
       void initialize(std::string name, tf2_ros::Buffer* tf,
-          costmap_2d::Costmap2DROS* costmap_ros);
+          costmap_2d::Costmap2DROS* costmap_ros); //障害物を検知
 
       /**
        * @brief  Destructor for the wrapper
