@@ -194,7 +194,7 @@ namespace potbot_lib{
         }
     }
 
-    void ArtificialPotentialFieldROS::setObstacle(costmap_2d::Costmap2D* costmap)
+    void ArtificialPotentialFieldROS::setObstacle(costmap_2d::Costmap2D* costmap)   //costmapからの障害物設定箇所
     {
         unsigned char* costs = costmap->getCharMap();
         unsigned int map_size = costmap->getSizeInCellsX()*costmap->getSizeInCellsY();

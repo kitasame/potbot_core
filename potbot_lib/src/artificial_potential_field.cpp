@@ -61,7 +61,7 @@ namespace potbot_lib{
         distance_threshold_repulsion_field_ = dtr;
     }
 
-    void ArtificialPotentialField::setGoal(double x, double y)
+    void ArtificialPotentialField::setGoal(double x, double y)  //目標ゴールを設定している
     {
         goal_ = Point{x,y};
         try 
@@ -71,7 +71,7 @@ namespace potbot_lib{
         catch(...){}
     }
 
-    void ArtificialPotentialField::setRobot(double x, double y)
+    void ArtificialPotentialField::setRobot(double x, double y) //ロボットの位置情報を設定している
     {
         robot_ = Point{x,y};
         try 
@@ -131,7 +131,7 @@ namespace potbot_lib{
         obs = obstacles_;
     }
 
-    void ArtificialPotentialField::createPotentialField()
+    void ArtificialPotentialField::createPotentialField()   //障害物回避のための斥力場計算
     {
         double weight_attraction_field = weight_attraction_field_;
         double distance_threshold_repulsion_field   = distance_threshold_repulsion_field_;

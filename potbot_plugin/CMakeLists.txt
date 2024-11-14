@@ -9,14 +9,20 @@ project(potbot_plugin)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   pcl_ros
+  geometry_msgs
+  navfn
+  angles
+  base_local_planner
+  cmake_modules
   costmap_2d
   dynamic_reconfigure
-  geometry_msgs
   nav_core
-  navfn
   nav_msgs
   pluginlib
+  sensor_msgs
   roscpp
+  tf2
+  tf2_geometry_msgs
   tf2_ros
   potbot_lib
   potbot_msgs

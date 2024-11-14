@@ -50,7 +50,7 @@
 
 namespace potbot_nav {
 
-  void PersonalSpaceDWA::reconfigure(potbot_plugin::PersonalSpaceDWAConfig &config)  //パラメータを設定しているだけ
+  void PersonalSpaceDWA::reconfigure(potbot_plugin::PersonalSpaceDWAConfig &config)  //パラメータを設定しているだけ voidは型だが、変数は作れない
   {
 
     // パーソナルスペースのパラメータを追加
@@ -62,40 +62,42 @@ namespace potbot_nav {
     boost::mutex::scoped_lock l(configuration_mutex_);
 
     generator_.setParameters(
-        config.sim_time,
-        config.sim_granularity,
-        config.angular_sim_granularity,
-        config.use_dwa,
+        config.sim_time,  //軌道をフォワードシミュレーションする時間
+        config.sim_granularity, //与えられた軌道上の点間のステップサイズ
+        config.angular_sim_granularity, //与えられた軌道上の角度サンプル間のステップサイズ
+        config.use_dwa, //dwaを使うかどうか
         sim_period_);
 
     double resolution = planner_util_->getCostmap()->getResolution();
     path_distance_bias_ = resolution * config.path_distance_bias;
     // pdistscale used for both path and alignment, set  forward_point_distance to zero to discard alignment
-    path_costs_.setScale(path_distance_bias_);
+    path_costs_.setScale(path_distance_bias_);  //path_distance_bias_コントローラーがパスにどれだけ近づこうとするかの重み
     alignment_costs_.setScale(path_distance_bias_);
 
     goal_distance_bias_ = resolution * config.goal_distance_bias;
-    goal_costs_.setScale(goal_distance_bias_);
+    goal_costs_.setScale(goal_distance_bias_);  //goal_distance_bias;コントローラーがローカルの目標にどれだけ近づこうとするかの重み。このパラメーターは速度も制御
     goal_front_costs_.setScale(goal_distance_bias_);
 
     occdist_scale_ = config.occdist_scale;
-    obstacle_costs_.setScale(occdist_scale_);
+    obstacle_costs_.setScale(occdist_scale_); //コントローラーが障害物をどれだけ回避しようとするかの重み
 
-    stop_time_buffer_ = config.stop_time_buffer;
+    stop_time_buffer_ = config.stop_time_buffer;  //軌道が有効と見なされるために、衝突前にロボットが停止しなければならない時間
     oscillation_costs_.setOscillationResetDist(config.oscillation_reset_dist, config.oscillation_reset_angle);
     forward_point_distance_ = config.forward_point_distance;
-    goal_front_costs_.setXShift(forward_point_distance_);
+    goal_front_costs_.setXShift(forward_point_distance_); //forward_point_distance_;追加のスコアリングポイントを配置するためのロボット中心点からの距離
     alignment_costs_.setXShift(forward_point_distance_);
  
     // obstacle costs can vary due to scaling footprint feature
     obstacle_costs_.setParams(config.max_vel_trans, config.max_scaling_factor, config.scaling_speed);
+    //max_scaling_factor;ロボットの footprint をスケーリングする最大係数
+    //scaling_speed;ロボットの footprint のスケーリングを開始する速度の絶対値
 
-    twirling_costs_.setScale(config.twirling_scale);
+    twirling_costs_.setScale(config.twirling_scale);  //スピンコストの重み
 
     int vx_samp, vy_samp, vth_samp;
-    vx_samp = config.vx_samples;
-    vy_samp = config.vy_samples;
-    vth_samp = config.vth_samples;
+    vx_samp = config.vx_samples;  //縦方向速度探索のサンプル数
+    vy_samp = config.vy_samples;  //横方向速度探索のサンプル数
+    vth_samp = config.vth_samples;  //回転方向探索のサンプル数
  
     if (vx_samp <= 0) {
       ROS_WARN("You've specified that you don't want any samples in the x dimension. We'll at least assume that you want to sample one value... so we're going to set vx_samples to 1 instead");
@@ -128,7 +130,9 @@ namespace potbot_nav {
       path_costs_(planner_util->getCostmap()),
       goal_costs_(planner_util->getCostmap(), 0.0, 0.0, true),
       goal_front_costs_(planner_util->getCostmap(), 0.0, 0.0, true),
-      alignment_costs_(planner_util->getCostmap())
+      alignment_costs_(planner_util->getCostmap()),
+      configuration_mutex_(),
+      custom_scored_sampling_planner_()
   {
     
     goal_front_costs_.setStopOnFailure( false );
@@ -136,9 +140,9 @@ namespace potbot_nav {
 
     // 新しいパラメータの初期化
     ros::NodeHandle private_nh("~/" + name);
-    private_nh.param("lf_scale", lf_scale_);
-    private_nh.param("ls_scale", ls_scale_);
-    private_nh.param("ps_weight", ps_weight_);
+    private_nh.param("lf_scale", lf_scale_, 1.2);
+    private_nh.param("ls_scale", ls_scale_, 0.8);
+    private_nh.param("ps_weight", ps_weight_, 0.5);
     // ここまで
 
     //Assuming this planner is being run within the navigation stack, we can
@@ -190,10 +194,10 @@ namespace potbot_nav {
     critics.push_back(&twirling_costs_); // optionally prefer trajectories that don't spin
 
     // trajectory generators
-    std::vector<base_local_planner::TrajectorySampleGenerator*> generator_list;
-    generator_list.push_back(&generator_);
+    std::vector<base_local_planner::TrajectorySampleGenerator*> gen_list;
+    gen_list.push_back(&generator_);
 
-    scored_sampling_planner_ = base_local_planner::SimpleScoredSamplingPlanner(generator_list, critics);
+    custom_scored_sampling_planner_ = CustomScoredSamplingPlanner(gen_list, critics, this);
 
     private_nh.param("cheat_factor", cheat_factor_, 1.0);
   }
@@ -210,18 +214,10 @@ namespace potbot_nav {
       return false;
     }
 
-    double norm_path_cost = path_cost / 254;
-    double norm_goal_cost = goal_cost / 254;
-    double norm_occ_cost = occ_cost / 254;
-
     total_cost =
-        path_distance_bias_ * (path_cost / 254) +
-        goal_distance_bias_ * (goal_cost / 254) +
-        occdist_scale_ * (occ_cost / 254);
-        // ROS_INFO("total_cost: %f",total_cost);
-        ROS_INFO("norm_path_cost: %f",norm_path_cost);
-        ROS_INFO("norm_goal_cost: %f",norm_goal_cost);
-        ROS_INFO("norm_occ_cost: %f",norm_occ_cost);
+        path_distance_bias_ * path_cost +
+        goal_distance_bias_ * goal_cost +
+        occdist_scale_ * occ_cost;
     return true;
   }
 
@@ -247,12 +243,12 @@ namespace potbot_nav {
         vel,
         goal,
         &limits,
+        
         vsamples_);
     generator_.generateTrajectory(pos, vel, vel_samples, traj);
-    double cost = scored_sampling_planner_.scoreTrajectory(traj, -1);
+    double cost = custom_scored_sampling_planner_.scoreTrajectory(traj, -1);
     //if the trajectory is a legal one... the check passes
     if(cost >= 0) {
-      // ROS_INFO("cost: %f",cost);
       return true;
     }
     ROS_WARN("Invalid Trajectory %f, %f, %f, cost: %f", vel_samples[0], vel_samples[1], vel_samples[2], cost);
@@ -310,52 +306,84 @@ namespace potbot_nav {
       // once we are close to goal, trying to keep the nose close to anything destabilizes behavior.
       alignment_costs_.setScale(0.0);
     }
-  }
 
 
   /*
    * given the current state of the robot, find a good trajectory
    */
-  base_local_planner::Trajectory PersonalSpaceDWA::findBestPath(  //DWAの評価関数かも？ 
-      const geometry_msgs::PoseStamped& global_pose,  //世界座標系でのロボットの位置
-      const geometry_msgs::PoseStamped& global_vel,
-      geometry_msgs::PoseStamped& drive_velocities)  //評価式を最大化する速度、角速度を代入
+  // base_local_planner::Trajectory PersonalSpaceDWA::findBestPath(  //DWAの評価関数かも？ 
+  //     const geometry_msgs::PoseStamped& global_pose,  //世界座標系でのロボットの位置
+  //     const geometry_msgs::PoseStamped& global_vel,
+  //     geometry_msgs::PoseStamped& drive_velocities)  //評価式を最大化する速度、角速度を代入
       
-      {
+  //     {
 
     //make sure that our configuration doesn't change mid-run
     boost::mutex::scoped_lock l(configuration_mutex_);
 
-    Eigen::Vector3f pos(global_pose.pose.position.x, global_pose.pose.position.y, tf2::getYaw(global_pose.pose.orientation));
+    // Eigen::Vector3f pos(global_pose.pose.position.x, global_pose.pose.position.y, tf2::getYaw(global_pose.pose.orientation));
     Eigen::Vector3f vel(global_vel.pose.position.x, global_vel.pose.position.y, tf2::getYaw(global_vel.pose.orientation));
-    geometry_msgs::PoseStamped goal_pose = global_plan_.back();
     Eigen::Vector3f goal(goal_pose.pose.position.x, goal_pose.pose.position.y, tf2::getYaw(goal_pose.pose.orientation));
     base_local_planner::LocalPlannerLimits limits = planner_util_->getCurrentLimits();
 
-    std::vector<base_local_planner::Trajectory> all_explored;
-    bool found_legal = scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
+    // パーソナルスペースコストを考慮するためのカスタムスコア関数を追加
+    // ここから
+    // PersonalSpaceDWA::CustomScoredSamplingPlanner::CustomScoredSamplingPlanner(
+    // std::vector<base_local_planner::TrajectorySampleGenerator*>& gen_list,
+    // std::vector<base_local_planner::TrajectoryCostFunction*>& critics,
+    // PersonalSpaceDWA* ps_dwa);
+    //  SimpleScoredSamplingPlanner(gen_list, critics), ps_dwa_(ps_dwa) {}
+
+    // double PersonalSpaceDWA::CustomScoredSamplingPlanner::scoreTrajectory(
+    // base_local_planner::Trajectory& traj, double best_traj_cost) {
+    //   double base_score = SimpleScoredSamplingPlanner::scoreTrajectory(traj, best_traj_cost);
+    //   if (base_score < 0) {
+    //     return base_score;
+    //   }
+    //   double ps_cost = ps_dwa_->calculatePersonalSpaceCost(traj);
+    //   return (1 - ps_dwa_->ps_weight_) * base_score - ps_dwa_->ps_weight_ * ps_cost;
+    // }
+
+    // auto custom_score = [this](base_local_planner::Trajectory& traj)  -> double { //このままだとcustom_scoreをうまく利用できないから別の方法を試す
+    //   double base_score = scored_sampling_planner_.scoreTrajectory(traj,DBL_MAX);
+    //   if (base_score < 0) {
+    //     return base_score;  // 既存の制約を満たさない場合は早期リターン
+    //     }
+    //   double ps_cost = calculatePersonalSpaceCost(traj);
+    //   return (1 - ps_weight_) * base_score - ps_weight_ * ps_cost;
+    // };
+
+    // カスタムスコア関数を使用してベストトラジェクトリを見つける
+    // std::vector<base_local_planner::Trajectory> all_explored;
+    // bool found_legal = scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
     // ここまで
 
     // prepare cost functions and generators for this run
-    generator_.initialise(pos,
-        vel,
-        goal,
-        &limits,
-        vsamples_);
+    // PersonalSpaceDWA::PersonalSpaceDWA(std::string name, base_local_planner::LocalPlannerUtil* planner_util)
+    // base_local_planner::LocalPlannerUtil(*planner_util),
+    // custom_scored_sampling_planner_(gen_list, critics, this);{
+    //   generator_.initialise(pos,
+    //         vel,
+    //         goal,
+    //         &limits,
+    //         vsamples_);
+    //   }
+
+      // base_local_planner::Trajectory PersonalSpaceDWA::findBestPath(  //DWAの評価関数かも？ 
+      // const geometry_msgs::PoseStamped& global_pose,  //世界座標系でのロボットの位置
+      // const geometry_msgs::PoseStamped& global_vel,
+      // geometry_msgs::PoseStamped& drive_velocities)  //評価式を最大化する速度、角速度を代入
+      
+      // {
+
+      //   boost::mutex::scoped_lock l(configuration_mutex_);
+    
 
     result_traj_.cost_ = -7;
     // find best trajectory by sampling and scoring the samples
-    scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
-
-    //result_traj_は何を格納した変数？
-    //calculateDWACostWithPersonalSpace()はresult_traj_を受け取るのでいいの？
-    //calculateDWACostWithPersonalSpace()でresult_traj_を受け取ったあとのresult_traj_の使い方は適切？
-    //障害物(今回は歩行者)とロボットの相対的な位置があれば大丈夫！
-    double custom_score = calculateDWACostWithPersonalSpace(all_explored);
-
-    ROS_INFO("custom score: %f", custom_score);
-
-  
+    // scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
+    std::vector<base_local_planner::Trajectory> all_explored;
+    custom_scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
 
     if(publish_traj_pc_)
     {
@@ -429,11 +457,13 @@ namespace potbot_nav {
     return result_traj_;
   }
 
+}
+
 //追加したコード
 // ここから
 double PersonalSpaceDWA::calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj) {
   double max_cost = 0.0;
-  std::vector<Pedestrian> pedestrians = getPedestrianPositions(costmap);
+  std::vector<Pedestrian> pedestrians = getPedestrianPositions();
 
   for (unsigned int i = 0; i < traj.getPointsSize(); ++i) {
     double x, y, th;
@@ -456,8 +486,6 @@ double PersonalSpaceDWA::calculatePersonalSpaceInvasion(const geometry_msgs::Poi
   double dy = point.y - pedestrian.y;
   double theta = std::atan2(dy, dx) - pedestrian.yaw;
 
-  //歩行者の位置情報とロボットの位置情報がわかればdx,dy,thetaが求められ、GetPedestrianPositionsも機能するようになる。今のままだと歩行者のPSを計算することができない
-
   if (std::abs(theta) <= M_PI / 2) {
     // 歩行者の前方の楕円形パーソナルスペース
     return std::sqrt(std::pow(dx / (lf_scale_ * pedestrian.lf), 2) + 
@@ -475,103 +503,27 @@ double PersonalSpaceDWA::calculateCostFromInvasion(double invasion) {
     return 254.0 / invasion;  // 距離に応じてコストを減少
   }
 }
+};
+// std::vector<Pedestrian> PersonalSpaceDWA::getPedestrianPositions() {
+//   // この関数は環境に応じて実装する必要があります
+//   // 例: センサーデータや他のROSノードからの情報を使用
+//   // ここでは仮のデータを返すだけの実装としています
+//   std::vector<Pedestrian> pre_vec;
+//   Pedestrian p0;
+//   p0.x=1.0;
+//   p0.y=2.0;
+//   p0.yaw=0.0;
+//   p0.lf=1.2;
+//   p0.ls=0.8;
 
-double PersonalSpaceDWA::calculateDWACostWithPersonalSpace(const std::vector<base_local_planner::Trajectory>& all_explored)
-{
+//   pre_vec.push_back(p0);
+//   return pre_vec;
 
-  // for (int i = 0; i < traj.getPointsSize(); i++) {
-  //   double x,y,th;
-  //   traj.getPoint(i,x,y,th);
-  //   ROS_INFO("(x,y,th) = %f, %f, %f", x,y,th);
-  // }
-
-  base_local_planner::Trajectory traj_tmp = all_explored.front(); //これはall_exploredで入れている初めの値のみを入れている
-  // for(int i = 0; i < all_explored.size(); ++i)
-  //     all_explored.front() = i;
-  // for(const auto& traj:all_explored)
-  // {
-  //   double vel = traj.xv_;
-  //   double omega = traj.thetav_;
-  // }
-  double base_score = scored_sampling_planner_.scoreTrajectory(traj_tmp,DBL_MAX);
-  if (base_score < 0) {
-    return base_score;  // 既存の制約を満たさない場合は早期リターン
-  }
-  double ps_cost = calculatePersonalSpaceCost(traj_tmp);
-  double normalized_ps_cost = ps_cost / 254.0;  //254.0で割って正規化
-
-  double final_cost = (1 - ps_weight_) * base_score - ps_weight_ * normalized_ps_cost;
-
-  
-    ROS_INFO("base_score: %f", base_score);
-    ROS_INFO("ps_cost: %f", ps_cost); 
-    ROS_INFO("normalize_ps_cost: %f",normalized_ps_cost);
-
-  return  final_cost;//(1 - ps_weight_) * base_score - ps_weight_ * normalized_ps_cost; //これですべての評価関数の正規化が完了
-
-}
-
-std::vector<Pedestrian> PersonalSpaceDWA::getPedestrianPositions(const costmap_2d::Costmap2D* costmap)  {
-  
-  std::vector<Pedestrian> peds;
-
-  if (!costmap) {
-      ROS_ERROR("Costmap ROS pointer is null");
-      return peds;
-  }
-  
-  // costmap_2d::Costmap2D* costmap = costmap->getCostmap();
-  
-  if (!costmap) {
-      ROS_ERROR("Costmap pointer is null");
-      return peds;
-  }
-
-  costmap->getSizeInCellsY(), costmap->getSizeInCellsX(), costmap->getResolution();
-  // costmap_ros->getOriginX() + costmap_ros->getSizeInMetersX()/2, costmap_ros->getOriginY() + costmap_ros->getSizeInMetersY()/2;
-
-  unsigned int size_x,size_y;
-
-  size_x = costmap->getSizeInCellsX();  //costmap_rosを使うときは、costmap_ros->getCostmap()までを引数？として扱うべき
-  size_y = costmap->getSizeInCellsY();
-
-  double resolution = costmap->getResolution();
-  
-  int costmap_size = size_x * size_y;  //センサ情報のサイズ
-
-  unsigned char* costs = costmap->getCharMap();
-
-  if (!costs) {
-            ROS_ERROR("Cost map data is null");
-            return peds;
-        }
-
-  for (unsigned int i = 0; i < costmap_size; i++) {
-    int cost = costs[i];
-    if (cost == 254)
-    {
-      unsigned int xi,yi;
-      costmap->indexToCells(i,xi,yi);
-      double x,y,th;
-      costmap->mapToWorld(xi,yi,x,y);
-
-    Pedestrian ped;
-
-    ped.x = x;
-    ped.y = y;
-    ped.yaw = th;
-
-    peds.push_back(ped);
-
-    // if(i < peds.size()){
-    // peds[i].x = x;
-    // peds[i].y = y;
-    // peds[i].yaw = th;
-    //   }
-    }
-  }
-  return peds;
-}
+  // return {
+  //   {1.0, 2.0, 0.0, 1.2, 0.8},
+  //   {3.0, 4.0, M_PI / 2, 1.2, 0.8}
+  // };
+// }
 // ここまで
 
-};
+// };
