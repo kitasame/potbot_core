@@ -46,6 +46,7 @@
 #include <base_local_planner/goal_functions.h>
 #include <nav_msgs/Path.h>
 #include <tf2/utils.h>
+#include <geometry_msgs/Point.h>
 
 // #include <nav_core/parameter_magic.h>
 
@@ -63,6 +64,10 @@ namespace potbot_nav {
         default_config_ = config;
         setup_ = true;
       }
+
+      lf_scale_ = config.lf_scale;
+      ls_scale_ = config.ls_scale;
+
 
       // update generic local planner params
       base_local_planner::LocalPlannerLimits limits;
@@ -104,6 +109,8 @@ namespace potbot_nav {
       ros::NodeHandle private_nh("~/" + name);
       g_plan_pub_ = private_nh.advertise<nav_msgs::Path>("global_plan", 1);
       l_plan_pub_ = private_nh.advertise<nav_msgs::Path>("local_plan", 1);
+      cluster_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>("cluster", 1);
+      centroid_pub_ = nh_.advertise<geometry_msgs::Point>("centroid", 10);
       tf_ = tf;
       costmap_ros_ = costmap_ros;
       costmap_ros_->getRobotPose(current_pose_);
@@ -120,6 +127,9 @@ namespace potbot_nav {
       {
         odom_helper_.setOdomTopic( odom_topic_ );
       }
+
+      private_nh.getParam( "lf_scale", lf_scale_ );
+      private_nh.getParam( "ls_scale", ls_scale_ );
       
       initialized_ = true;
 
@@ -184,23 +194,25 @@ namespace potbot_nav {
     delete dsrv_;
   }
 
-  void PersonalSpaceDWAROS::getObstacle(costmap_2d::Costmap2D* costmap)
+  std::vector<geometry_msgs::Point> PersonalSpaceDWAROS::getObstacle(costmap_2d::Costmap2D* costmap)
+  {
+    std::vector<geometry_msgs::Point> obs_cells;
+    unsigned char* costs = costmap->getCharMap();
+    unsigned int map_size = costmap->getSizeInCellsX()*costmap->getSizeInCellsY();
+    for (unsigned int i = 0; i < map_size; i++)
     {
-        unsigned char* costs = costmap->getCharMap();
-        unsigned int map_size = costmap->getSizeInCellsX()*costmap->getSizeInCellsY();
-        for (unsigned int i = 0; i < map_size; i++)
-        {
-            int cost = costs[i];
-            if (cost == 254)
-            {
-                unsigned int xi,yi;
-                costmap->indexToCells(i,xi,yi);
-                double x,y;
-                costmap->mapToWorld(xi,yi,x,y);
-                apf_->getObstacle(x, y);
-            }
-        }
+      int cost = costs[i];
+      if (cost == 254)
+      {
+        unsigned int xi,yi;
+        costmap->indexToCells(i,xi,yi);
+        double x,y;
+        costmap->mapToWorld(xi,yi,x,y);
+        obs_cells.push_back(potbot_lib::utility::get_point(x,y,0));
+      }
     }
+    return obs_cells;
+  }
 
 
   bool PersonalSpaceDWAROS::dwaComputeVelocityCommands(geometry_msgs::PoseStamped &global_pose, geometry_msgs::Twist& cmd_vel) {
@@ -209,6 +221,93 @@ namespace potbot_nav {
       ROS_ERROR("This planner has not been initialized, please call initialize() before using this planner");
       return false;
     }
+
+    visualization_msgs::MarkerArray cluster_arr;
+
+    visualization_msgs::Marker cluster_ellipse;
+
+    cluster_ellipse.header.frame_id = costmap_ros_->getGlobalFrameID();
+    cluster_ellipse.header.stamp = ros::Time::now();
+
+    // cluster.ns
+    cluster_ellipse.id = 0;
+    cluster_ellipse.type = visualization_msgs::Marker::SPHERE;
+    cluster_ellipse.action = visualization_msgs::Marker::MODIFY;
+
+    // 障害物の座標を取得
+    std::vector<geometry_msgs::Point> obstacle_points = getObstacle(costmap_ros_->getCostmap());
+
+    // 障害物の重心点を計算
+    double x_sum = 0.0, y_sum = 0.0;
+    size_t point_count = obstacle_points.size();
+
+    if (point_count > 0) 
+    {
+        for (const auto& point : obstacle_points) 
+        {
+            x_sum += point.x;
+            y_sum += point.y;
+        }
+        double centroid_x = x_sum / point_count;
+        double centroid_y = y_sum / point_count;
+
+        
+        // ROS_INFO("centroid_x,centroid_y:(%f, %f)", centroid_x,centroid_y);
+
+        // 重心点をellipseのposeに設定
+        cluster_ellipse.pose = potbot_lib::utility::get_pose(centroid_x, centroid_y, 0, 0, 0, 0);
+
+        // 重心をパブリッシュ
+        geometry_msgs::Point centroid_msg;
+        centroid_msg.x = centroid_x;
+        centroid_msg.y = centroid_y;
+        centroid_msg.z = 0.0; // zは使用しない
+        centroid_pub_.publish(centroid_msg);
+    } else 
+    {
+        ROS_WARN("No obstacles detected. Using default pose for cluster ellipse.");
+        cluster_ellipse.pose = potbot_lib::utility::get_pose(100, 100, 0, 0, 0, 0);
+        // 重心をパブリッシュ
+        geometry_msgs::Point centroid_msg;
+        centroid_msg.x = 100;
+        centroid_msg.y = 100;
+        centroid_msg.z = 0.0; // zは使用しない
+        centroid_pub_.publish(centroid_msg);
+    }
+
+    cluster_ellipse.scale.x = 2*ls_scale_;
+    cluster_ellipse.scale.y = 2*lf_scale_;
+    cluster_ellipse.scale.z = 0.001;
+    cluster_ellipse.color = potbot_lib::color::get_msg("purple");
+
+    visualization_msgs::Marker cluster_points = cluster_ellipse;
+    visualization_msgs::Marker cluster_circle = cluster_ellipse;
+
+    cluster_circle.id = 1;
+    cluster_circle.scale.x = 2*ls_scale_;
+    cluster_circle.scale.y = 2*ls_scale_;
+    cluster_circle.scale.z = 0.001;
+    // cluster.lifetime
+    // cluster.text
+
+    cluster_points.id = 2;
+    cluster_points.type = visualization_msgs::Marker::POINTS; //3次元
+    cluster_points.action = visualization_msgs::Marker::MODIFY;
+    cluster_points.pose = potbot_lib::utility::get_pose();
+    cluster_points.scale.x = 0.05;  //単位[m] markerの大きさを変える
+    cluster_points.scale.y = 0.05;
+    cluster_points.scale.z = 0.01;
+    cluster_points.color = potbot_lib::color::get_msg("light_blue");
+
+    cluster_points.points = getObstacle(costmap_ros_->getCostmap());
+
+    cluster_arr.markers.push_back(cluster_ellipse);
+    cluster_arr.markers.push_back(cluster_circle);
+    cluster_arr.markers.push_back(cluster_points);
+
+    cluster_pub_.publish(cluster_arr);
+
+    // return true;
 
     geometry_msgs::PoseStamped robot_vel;
     odom_helper_.getRobotVel(robot_vel);

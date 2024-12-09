@@ -89,11 +89,15 @@ namespace potbot_nav
          */
         void laserScanCallback(const sensor_msgs::LaserScanConstPtr &message);
 
+        const potbot_msgs::ObstacleArray& getClustersObstacleArray() const;
+
     protected:
         virtual void setupDynamicReconfigure(ros::NodeHandle &nh);
 
     private:
         std::string global_frame_;
+
+        potbot_msgs::ObstacleArray clusters_obstaclearray_scan_;
 
         ros::Subscriber sub_scan_;
         ros::Publisher pub_scan_clustering_, pub_state_marker_, pub_obstacles_scan_estimate_, pub_scan_range_;

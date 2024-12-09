@@ -64,6 +64,13 @@
 
 /*追加項目*/
 #include <geometry_msgs/Point.h>
+#include <potbot_lib/utility.h>
+#include <potbot_lib/field.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <potbot_lib/scan_clustering.h>
+#include <potbot_plugin/state_layer.h>
+#include <unordered_map>
 
 #include <nav_msgs/Path.h>
 /*ここまで*/
@@ -85,6 +92,11 @@ namespace potbot_nav {
    * @brief A class implementing a local planner using the Dynamic Window Approach
    */
   class PersonalSpaceDWA {
+    
+    protected:
+        std::vector<potbot_lib::Point> obstacles_;
+
+
     public:
       /**
        * @brief  Constructor for the planner
@@ -93,17 +105,17 @@ namespace potbot_nav {
        * @param global_frame the frame id of the tf frame to use
        */
       PersonalSpaceDWA(std::string name, base_local_planner::LocalPlannerUtil *planner_util);
-
-      // protected:
-      // Point robot_;
-      // std::vector<Point> obstacles_;
-
       /**
        * @brief Reconfigures the trajectory planner
        */
       void reconfigure(potbot_plugin::PersonalSpaceDWAConfig &cfg);
 
       void getObstacle(double x = 0, double y = 0);
+      void setObstacle(double x = 0, double y = 0);
+
+      // void updateObstaclesFromClusters(potbot_nav::StateLayer& state_layer);
+
+      double estimatePedestrianOrientationFromClusters(const potbot_msgs::ObstacleArray& clusters_obstaclearray);
 
       /**
        * @brief  Check if a trajectory is legal for a position/velocity pair
@@ -171,8 +183,8 @@ namespace potbot_nav {
       PersonalSpaceDWA();
       double calculateTotalPersonalSpaceInvasion(const geometry_msgs::Point& point);
 
-    protected:
-      PersonalSpaceDWA* apf_;
+      // 歩行者の向きを推定する補助関数
+      double estimatePedestrianOrientation(const unsigned char* costs, unsigned int x, unsigned int y,unsigned int size_x, unsigned int size_y);
 
     private:
 
@@ -180,6 +192,7 @@ namespace potbot_nav {
       std::string pedestrian_layer_name_;
       ros::Subscriber pedestrian_pose_sub_;
       std::vector<Pedestrian> current_pedestrians_;
+      std::unordered_map<int, std::pair<double, double>> previous_positions;
 
       // 新しいメソッド
       // void pedestrianPoseCallback(const geometry_msgs::PoseArray::ConstPtr& msg);
@@ -192,6 +205,12 @@ namespace potbot_nav {
       // Subscribers
       ros::Subscriber robot_pose_sub_;
       ros::Subscriber pedestrian_poses_sub_;
+      ros::Subscriber centroid_sub_;
+      double centroid_x_;
+      double centroid_y_;
+
+      void centroidCallback(const geometry_msgs::Point::ConstPtr& msg);
+      base_local_planner::SimpleTrajectoryGenerator simple_trajectory_generator_;
       
       // Publishers
       ros::Publisher personal_space_pub_;
@@ -212,9 +231,23 @@ namespace potbot_nav {
       double calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj);
       double calculatePersonalSpaceInvasion(const geometry_msgs::Point& point, const Pedestrian& pedestrian);
       double calculateCostFromInvasion(double invasion);
+
+      // double estimatePedestrianOrientationFromClusters(const potbot_msgs::ObstacleArray& clusters_obstaclearray,double x, double y);
+      double calculateTotalPersonalSpaceViolation(const geometry_msgs::Point& robot_pos);
+
       std::vector<Pedestrian> getPedestrianPositions(const costmap_2d::Costmap2D* costmap);
+      // 歩行者情報を更新
+      void updatePedestrians(const costmap_2d::Costmap2D* costmap);
+      // スケールパラメータのゲッター
+      double getLfScale() const { return lf_scale_; }
+      double getLsScale() const { return ls_scale_; }
+
 
       double calculateDWACostWithPersonalSpace(const std::vector<base_local_planner::Trajectory>& all_explored);
+      double calculateDWACostWithPersonalSpace(const base_local_planner::Trajectory& traj);
+      double calculateDWACostWithPersonalSpace(std::vector<base_local_planner::Trajectory>& trajectories,
+            const Eigen::Vector3f& pedestrian_pos,
+            const Eigen::Vector3f& robot_pos);
 
       double lf_scale_;
       double ls_scale_;

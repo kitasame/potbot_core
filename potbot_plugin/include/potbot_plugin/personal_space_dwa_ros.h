@@ -48,15 +48,20 @@
 #include <angles/angles.h>
 
 #include <nav_msgs/Odometry.h>
-
+#include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <costmap_2d/costmap_2d.h>
 #include <nav_core/base_local_planner.h>
 #include <base_local_planner/latched_stop_rotate_controller.h>
+#include <tf2/utils.h>
+#include <tf/transform_listener.h>
+#include <potbot_plugin/state_layer.h>
 
 #include <base_local_planner/odometry_helper_ros.h>
 
 #include <potbot_plugin/personal_space_dwa.h>
+#include <visualization_msgs/MarkerArray.h>
 
 namespace potbot_nav {
   /**
@@ -79,7 +84,13 @@ namespace potbot_nav {
        */
       void initialize(std::string name, tf2_ros::Buffer* tf,
           costmap_2d::Costmap2DROS* costmap_ros); //障害物を検知
-
+      
+      std::vector<geometry_msgs::Point> getObstacle(costmap_2d::Costmap2D* costmap);
+      // void setObstacle(double x, double y);
+      // void setObstacle(const geometry_msgs::PoseStamped& obs);
+      // void setObstacle(const geometry_msgs::PointStamped& obs);
+      // void setObstacle(const geometry_msgs::Point& obs);
+      // void setObstacle(const geometry_msgs::Pose& obs);
       /**
        * @brief  Destructor for the wrapper
        */
@@ -115,11 +126,6 @@ namespace potbot_nav {
        */
       bool isGoalReached();
 
-      void getObstacle(costmap_2d::Costmap2D* costmap);
-
-
-
-
       bool isInitialized() {
         return initialized_;
       }
@@ -140,13 +146,26 @@ namespace potbot_nav {
       tf2_ros::Buffer* tf_; ///< @brief Used for transforming point clouds
 
       // for visualisation, publishers of global and local plan
-      ros::Publisher g_plan_pub_, l_plan_pub_;
+      ros::Publisher g_plan_pub_, l_plan_pub_, cluster_pub_, centroid_pub_;
 
       base_local_planner::LocalPlannerUtil planner_util_;
 
       boost::shared_ptr<PersonalSpaceDWA> dp_; ///< @brief The trajectory controller
 
       costmap_2d::Costmap2DROS* costmap_ros_;
+
+      void updateCallback(const ros::TimerEvent& event);
+
+      std::vector<std::vector<geometry_msgs::Point>> clusterObstacles(const std::vector<geometry_msgs::Point>& obstacles, costmap_2d::Costmap2D* costmap);
+
+      ros::NodeHandle nh_;
+      ros::Timer timer_;
+      tf2_ros::Buffer tf_buffer_;
+      tf2_ros::TransformListener tf_listener_{tf_buffer_};
+      potbot_nav::PersonalSpaceDWA* dwa_planner_;
+
+      double lf_scale_;
+      double ls_scale_;
 
       dynamic_reconfigure::Server<potbot_plugin::PersonalSpaceDWAConfig> *dsrv_;
       potbot_plugin::PersonalSpaceDWAConfig default_config_;
