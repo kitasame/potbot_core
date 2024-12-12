@@ -1,39 +1,3 @@
-/*********************************************************************
-*
-* Software License Agreement (BSD License)
-*
-*  Copyright (c) 2009, Willow Garage, Inc.
-*  All rights reserved.
-*
-*  Redistribution and use in source and binary forms, with or without
-*  modification, are permitted provided that the following conditions
-*  are met:
-*
-*   * Redistributions of source code must retain the above copyright
-*     notice, this list of conditions and the following disclaimer.
-*   * Redistributions in binary form must reproduce the above
-*     copyright notice, this list of conditions and the following
-*     disclaimer in the documentation and/or other materials provided
-*     with the distribution.
-*   * Neither the name of Willow Garage, Inc. nor the names of its
-*     contributors may be used to endorse or promote products derived
-*     from this software without specific prior written permission.
-*
-*  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-*  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-*  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-*  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-*  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-*  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-*  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-*  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-*  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-*  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-*  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-*  POSSIBILITY OF SUCH DAMAGE.
-*
-* Author: Eitan Marder-Eppstein
-*********************************************************************/
 #include <potbot_plugin/personal_space_dwa.h>
 #include <base_local_planner/goal_functions.h>
 #include <cmath>
@@ -53,6 +17,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <potbot_plugin/state_layer.h>
 #include <geometry_msgs/Point.h>
+#include <std_msgs/Float64.h>
 
 namespace potbot_nav {
 
@@ -146,6 +111,7 @@ namespace potbot_nav {
     private_nh.param("ls_scale", ls_scale_);
     private_nh.param("ps_weight", ps_weight_);
     centroid_sub_ = nh_.subscribe("centroid", 10, &PersonalSpaceDWA::centroidCallback, this);
+    invansion_pub_ = private_nh.advertise<std_msgs::Float64>("invansion", 10);
     // ここまで
 
     //Assuming this planner is being run within the navigation stack, we can
@@ -209,7 +175,7 @@ namespace potbot_nav {
   {
     centroid_x_ = msg->x;
     centroid_y_ = msg->y;
-    // ROS_INFO("Received centroid: (%f, %f)", centroid_x_, centroid_y_);
+    ROS_INFO("Received centroid: (%f, %f)", centroid_x_, centroid_y_);
   }
 
   // used for visualization only, total_costs are not really total costs
@@ -439,6 +405,8 @@ namespace potbot_nav {
 
     // パーソナルスペースを考慮したコスト計算
     double custom_score = calculateDWACostWithPersonalSpace(all_explored, pedestrian_pos, pos);
+    result_traj_.cost_ += custom_score;
+    // ROS_INFO("result_traj_.cost_: %f",result_traj_.cost_);
 
     //if we don't have a legal trajectory, we'll just command zero
     if (result_traj_.cost_ < 0) {
@@ -458,8 +426,8 @@ namespace potbot_nav {
       q.setRPY(0, 0, result_traj_.thetav_);
       tf2::convert(q, drive_velocities.pose.orientation);
     }
-    ROS_INFO("result_traj_ cost: %f", result_traj_.cost_);
-    ROS_INFO("best_score: %f", custom_score);
+    // ROS_INFO("result_traj_ cost: %f", result_traj_.cost_);
+    // ROS_INFO("best_score: %f", custom_score);
     return result_traj_;
   }
 
@@ -467,54 +435,72 @@ namespace potbot_nav {
     std::vector<base_local_planner::Trajectory>& trajectories,
     const Eigen::Vector3f& pedestrian_pos,
     const Eigen::Vector3f& robot_pos) 
-    {
-      double best_score = -1e9; // 初期値は非常に小さな値
-    for (const auto& traj : trajectories) {
+  {
+      double min_ps_cost = std::numeric_limits<double>::max(); // 初期値は非常に小さな値
+      double invansion = 0.0;
+      for (const auto& traj : trajectories) 
+      {
 
-      base_local_planner::Trajectory modified_traj = traj; // コピーを作成
+        base_local_planner::Trajectory modified_traj = traj; // コピーを作成
 
-        if (traj.cost_ < 0) continue; // 無効な軌道はスキップ
+          if (traj.cost_ < 0) continue; // 無効な軌道はスキップ
 
-        // 軌道のすべてのポイントを確認
-        for (unsigned int i = 0; i < traj.getPointsSize(); ++i) {
-            double p_x, p_y, p_th;
-            traj.getPoint(i, p_x, p_y, p_th);
+          // 軌道のすべてのポイントを確認
+          for (unsigned int i = 0; i < traj.getPointsSize(); ++i) 
+          {
+              double p_x, p_y, p_th;
+              traj.getPoint(i, p_x, p_y, p_th);
 
-            // ロボット位置から歩行者位置への相対ベクトルを計算
-            double dx = pedestrian_pos[0] - p_x;
-            double dy = pedestrian_pos[1] - p_y;
+              // 歩行者の位置と未来の軌道の計算
+              double dx = pedestrian_pos[0] - p_x;
+              double dy = pedestrian_pos[1] - p_y;
 
-            double distance = std::sqrt(dx * dx + dy * dy);
+              // 現在のロボットと歩行者の相対ベクトルの計算
+              // double dx = pedestrian_pos[0] - robot_pos[0];
+              // double dy = pedestrian_pos[1] - robot_pos[1];
 
-            // 角度を0-180度範囲に正規化
-            double theta = std::atan2(dy, dx) - p_th;
+              double distance = std::sqrt(dx * dx + dy * dy);
+              // ROS_INFO("distance: %f",distance);
 
-            while (theta > M_PI) theta -= 2 * M_PI;
-            while (theta < -M_PI) theta += 2 * M_PI;
+              // 角度を0-180度範囲に正規化
+              double theta = std::atan2(dy, dx) - p_th;
 
-            double personal_space_radius;
+              while (theta > M_PI) theta -= 2 * M_PI;
+              while (theta < -M_PI) theta += 2 * M_PI;
 
-          if (std::abs(theta) <= M_PI / 2) {
-            // 歩行者の前方の楕円形パーソナルスペース
-            return personal_space_radius = std::sqrt(std::pow(dx / (lf_scale_ * lf_scale_), 2) + std::pow(dy / (ls_scale_ * ls_scale_), 2));
-          } else {
-            // 歩行者の後方の円形パーソナルスペース
-            return personal_space_radius = std::sqrt(std::pow(dx, 2) + std::pow(dy, 2)) / (ls_scale_ * ls_scale_ );
-          }
+              double personal_space_radius;
+              
 
-            // パーソナルスペースへの侵入チェック
-            if (distance < personal_space_radius) {
-                modified_traj.cost_ -= 100.0; // ペナルティを追加
+              if (std::abs(theta) <= M_PI / 2) {
+                // 歩行者の前方の楕円形パーソナルスペース
+                personal_space_radius = std::sqrt(std::pow(dx / (lf_scale_), 2) + std::pow(dy / (ls_scale_), 2));
+              } else {
+                // 歩行者の後方の円形パーソナルスペース
+                personal_space_radius = std::sqrt(std::pow(dx, 2) + std::pow(dy, 2)) / (ls_scale_ * ls_scale_ );
+              }
+
+              // Avoid division by zero
+              if (personal_space_radius < 1e-9) continue;
+
+              double current_invansion = personal_space_radius / distance;
+              invansion = std::max(invansion, current_invansion); // 最大侵入値を記録
+              // ROS_INFO("invansion:%f",invansion);
+
+
+              // Calculate cost using the exponential function
+              // double ps_cost = std::exp(ps_weight_ * (1.0 / personal_space_radius));
+
+              double current_ps_cost = std::exp(ps_weight_ * (1.0 / personal_space_radius));
+              min_ps_cost = std::min(min_ps_cost, current_ps_cost); // 最大コストを記録
+              ROS_INFO("ps_cost: %f",min_ps_cost);
+              
             }
         }
-
-        // 評価値の更新
-        if (modified_traj.cost_ > best_score) {
-            best_score = modified_traj.cost_;
-        }
-    }
-    return best_score;
-    }
+        std_msgs::Float64 invansion_msg;
+        invansion_msg.data = invansion;
+        invansion_pub_.publish(invansion_msg);
+        return min_ps_cost;
+  }
 }
 
 //追加したコード

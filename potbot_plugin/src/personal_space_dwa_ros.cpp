@@ -238,11 +238,11 @@ namespace potbot_nav {
     std::vector<geometry_msgs::Point> obstacle_points = getObstacle(costmap_ros_->getCostmap());
 
     // 障害物の重心点を計算
-    double x_sum = 0.0, y_sum = 0.0;
     size_t point_count = obstacle_points.size();
 
     if (point_count > 0) 
     {
+        double x_sum = 0.0, y_sum = 0.0;
         for (const auto& point : obstacle_points) 
         {
             x_sum += point.x;

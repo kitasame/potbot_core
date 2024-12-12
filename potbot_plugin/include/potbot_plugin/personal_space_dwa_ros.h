@@ -158,6 +158,8 @@ namespace potbot_nav {
 
       std::vector<std::vector<geometry_msgs::Point>> clusterObstacles(const std::vector<geometry_msgs::Point>& obstacles, costmap_2d::Costmap2D* costmap);
 
+      std::vector<std::vector<geometry_msgs::Point>> clusterObstacles(const std::vector<geometry_msgs::Point>& obstacle_points, double cluster_tolerance, int min_cluster_size);
+
       ros::NodeHandle nh_;
       ros::Timer timer_;
       tf2_ros::Buffer tf_buffer_;

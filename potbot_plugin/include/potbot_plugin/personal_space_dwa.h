@@ -186,6 +186,8 @@ namespace potbot_nav {
       // 歩行者の向きを推定する補助関数
       double estimatePedestrianOrientation(const unsigned char* costs, unsigned int x, unsigned int y,unsigned int size_x, unsigned int size_y);
 
+      void publishInvansion(double invansion);
+
     private:
 
       costmap_2d::Costmap2D* costmap;
@@ -214,6 +216,9 @@ namespace potbot_nav {
       
       // Publishers
       ros::Publisher personal_space_pub_;
+      ros::Publisher invansion_pub_;
+
+
 
       geometry_msgs::Point robot_pos_;
       std::vector<Pedestrian> pedestrians_;
