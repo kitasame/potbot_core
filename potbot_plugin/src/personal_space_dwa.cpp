@@ -15,7 +15,6 @@
 #include <unordered_map>
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <potbot_plugin/state_layer.h>
 #include <geometry_msgs/Point.h>
 #include <std_msgs/Float64.h>
 
