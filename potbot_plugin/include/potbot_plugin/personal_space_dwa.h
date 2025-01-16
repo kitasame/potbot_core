@@ -183,16 +183,10 @@ namespace potbot_nav {
       PersonalSpaceDWA();
       double calculateTotalPersonalSpaceInvasion(const geometry_msgs::Point& point);
 
-      // 歩行者の向きを推定する補助関数
-      double estimatePedestrianOrientation(const unsigned char* costs, unsigned int x, unsigned int y,unsigned int size_x, unsigned int size_y);
-
-      void publishInvansion(double invansion);
-
     private:
 
       costmap_2d::Costmap2D* costmap;
       std::string pedestrian_layer_name_;
-      ros::Subscriber pedestrian_pose_sub_;
       std::vector<Pedestrian> current_pedestrians_;
       std::unordered_map<int, std::pair<double, double>> previous_positions;
 
@@ -206,17 +200,17 @@ namespace potbot_nav {
       
       // Subscribers
       ros::Subscriber robot_pose_sub_;
-      ros::Subscriber pedestrian_poses_sub_;
       ros::Subscriber centroid_sub_;
       double centroid_x_;
       double centroid_y_;
+      bool received_centroid_ ;
 
       void centroidCallback(const geometry_msgs::Point::ConstPtr& msg);
       base_local_planner::SimpleTrajectoryGenerator simple_trajectory_generator_;
       
       // Publishers
       ros::Publisher personal_space_pub_;
-      ros::Publisher invansion_pub_;
+      ros::Publisher invasion_pub_;
 
 
 

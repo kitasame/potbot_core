@@ -18,6 +18,12 @@ PLUGINLIB_EXPORT_CLASS(potbot_nav::PersonalSpaceDWAROS, nav_core::BaseLocalPlann
 
 namespace potbot_nav {
 
+  // // 範囲定義 (原点基準)
+  // const double MAX_X = 15.0;  // x方向最大値
+  // const double MIN_X = 0.0;   // x方向最小値
+  // const double MAX_Y = 2.0;   // y方向最大値
+  // const double MIN_Y = -2.0;  // y方向最小値
+
   void PersonalSpaceDWAROS::reconfigureCB(potbot_plugin::PersonalSpaceDWAConfig &config, uint32_t level) {
       if (setup_ && config.restore_defaults) {
         config = default_config_;
@@ -73,7 +79,8 @@ namespace potbot_nav {
       g_plan_pub_ = private_nh.advertise<nav_msgs::Path>("global_plan", 1);
       l_plan_pub_ = private_nh.advertise<nav_msgs::Path>("local_plan", 1);
       cluster_pub_ = private_nh.advertise<visualization_msgs::MarkerArray>("cluster", 1);
-      centroid_pub_ = nh_.advertise<geometry_msgs::Point>("centroid", 10);
+      centroid_pub_ = private_nh.advertise<geometry_msgs::Point>("centroid", 10);
+      range_pub_ = private_nh.advertise<visualization_msgs::Marker>("range_marker", 1);
       tf_ = tf;
       costmap_ros_ = costmap_ros;
       costmap_ros_->getRobotPose(current_pose_);
@@ -93,6 +100,10 @@ namespace potbot_nav {
 
       private_nh.getParam( "lf_scale", lf_scale_ );
       private_nh.getParam( "ls_scale", ls_scale_ );
+      private_nh.getParam("MAX_X", MAX_X_);
+      private_nh.getParam("MIN_X", MIN_X_);
+      private_nh.getParam("MAX_Y", MAX_Y_);
+      private_nh.getParam("MIN_Y", MIN_Y_);
       
       initialized_ = true;
 
@@ -171,7 +182,9 @@ namespace potbot_nav {
         costmap->indexToCells(i,xi,yi);
         double x,y;
         costmap->mapToWorld(xi,yi,x,y);
-        obs_cells.push_back(potbot_lib::utility::get_point(x,y,0));
+        if (x >= MIN_X_ && x <= MAX_X_ && y >= MIN_Y_ && y <= MAX_Y_) {
+          obs_cells.push_back(potbot_lib::utility::get_point(x,y,0));
+        }
       }
     }
     return obs_cells;
@@ -185,15 +198,47 @@ namespace potbot_nav {
       return false;
     }
 
+    double robot_x = global_pose.pose.position.x;
+    double robot_y = global_pose.pose.position.y;
+
     visualization_msgs::MarkerArray cluster_arr;
 
     visualization_msgs::Marker cluster_ellipse;
+
+    visualization_msgs::Marker range_marker;
+
+    range_marker.header.frame_id = costmap_ros_->getGlobalFrameID();
+    range_marker.header.stamp = ros::Time::now();
+    range_marker.ns = "movement_range";
+    range_marker.id = 0;
+    range_marker.type = visualization_msgs::Marker::CUBE;
+    range_marker.action = visualization_msgs::Marker::ADD;
+    // range_marker.pose = potbot_lib::utility::get_pose(0, 0, 0, 0, 0, 0);
+
+    range_marker.pose.position.x = (MAX_X_ + MIN_X_) / 2.0;  // 中心
+    range_marker.pose.position.y = (MAX_Y_ + MIN_Y_) / 2.0;
+    range_marker.pose.position.z = 0.1;
+    range_marker.pose.orientation.w = 1.0;  // 初期回転なし
+    range_marker.scale.x = MAX_X_ - MIN_X_;
+    range_marker.scale.y = MAX_Y_ - MIN_Y_;
+    range_marker.scale.z = 0.01;  // 薄いZ平面
+    // range_marker.color = potbot_lib::color::get_msg("green");
+    range_marker.color.r = 0;
+    range_marker.color.g = 1;
+    range_marker.color.b = 0;
+    range_marker.color.a = 0.2;
+
+
+    // range_marker.markers.push_back(range_marker);
+
+    range_pub_.publish(range_marker);
+
 
     cluster_ellipse.header.frame_id = costmap_ros_->getGlobalFrameID();
     cluster_ellipse.header.stamp = ros::Time::now();
 
     // cluster.ns
-    cluster_ellipse.id = 0;
+    cluster_ellipse.id = 1;
     cluster_ellipse.type = visualization_msgs::Marker::SPHERE;
     cluster_ellipse.action = visualization_msgs::Marker::MODIFY;
 
@@ -232,8 +277,8 @@ namespace potbot_nav {
         cluster_ellipse.pose = potbot_lib::utility::get_pose(100, 100, 0, 0, 0, 0);
         // 重心をパブリッシュ
         geometry_msgs::Point centroid_msg;
-        centroid_msg.x = 100;
-        centroid_msg.y = 100;
+        centroid_msg.x =robot_x;
+        centroid_msg.y =robot_y;
         centroid_msg.z = 0.0; // zは使用しない
         centroid_pub_.publish(centroid_msg);
     }
@@ -246,14 +291,13 @@ namespace potbot_nav {
     visualization_msgs::Marker cluster_points = cluster_ellipse;
     visualization_msgs::Marker cluster_circle = cluster_ellipse;
 
-    cluster_circle.id = 1;
+    cluster_circle.id = 2;
     cluster_circle.scale.x = 2*ls_scale_;
     cluster_circle.scale.y = 2*ls_scale_;
     cluster_circle.scale.z = 0.001;
-    // cluster.lifetime
-    // cluster.text
+    cluster_circle.color = potbot_lib::color::get_msg("blue");
 
-    cluster_points.id = 2;
+    cluster_points.id = 3;
     cluster_points.type = visualization_msgs::Marker::POINTS; //3次元
     cluster_points.action = visualization_msgs::Marker::MODIFY;
     cluster_points.pose = potbot_lib::utility::get_pose();
@@ -269,6 +313,12 @@ namespace potbot_nav {
     cluster_arr.markers.push_back(cluster_points);
 
     cluster_pub_.publish(cluster_arr);
+
+    // 計算された速度を範囲内に制限
+    if (robot_x + cmd_vel.linear.x > MAX_X_) cmd_vel.linear.x = MAX_X_ - robot_x;
+    if (robot_x + cmd_vel.linear.x < MIN_X_) cmd_vel.linear.x = MIN_X_ - robot_x;
+    if (robot_y + cmd_vel.linear.y > MAX_Y_) cmd_vel.linear.y = MAX_Y_ - robot_y;
+    if (robot_y + cmd_vel.linear.y < MIN_Y_) cmd_vel.linear.y = MIN_Y_ - robot_y;
 
     // return true;
 

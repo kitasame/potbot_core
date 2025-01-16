@@ -146,7 +146,7 @@ namespace potbot_nav {
       tf2_ros::Buffer* tf_; ///< @brief Used for transforming point clouds
 
       // for visualisation, publishers of global and local plan
-      ros::Publisher g_plan_pub_, l_plan_pub_, cluster_pub_, centroid_pub_;
+      ros::Publisher g_plan_pub_, l_plan_pub_, cluster_pub_, centroid_pub_, range_pub_;
 
       base_local_planner::LocalPlannerUtil planner_util_;
 
@@ -168,6 +168,7 @@ namespace potbot_nav {
 
       double lf_scale_;
       double ls_scale_;
+      double MAX_X_, MIN_X_, MAX_Y_, MIN_Y_;
 
       dynamic_reconfigure::Server<potbot_plugin::PersonalSpaceDWAConfig> *dsrv_;
       potbot_plugin::PersonalSpaceDWAConfig default_config_;
@@ -178,6 +179,11 @@ namespace potbot_nav {
 
 
       bool initialized_;
+
+      // const double MAX_X = 10.0;  // x方向最大値
+      // const double MIN_X = 0.0;   // x方向最小値
+      // const double MAX_Y = 2.0;   // y方向最大値
+      // const double MIN_Y = -2.0;  // y方向最小値
 
 
       base_local_planner::OdometryHelperRos odom_helper_;

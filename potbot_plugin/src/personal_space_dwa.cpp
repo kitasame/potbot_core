@@ -109,8 +109,8 @@ namespace potbot_nav {
     private_nh.param("lf_scale", lf_scale_);
     private_nh.param("ls_scale", ls_scale_);
     private_nh.param("ps_weight", ps_weight_);
-    centroid_sub_ = nh_.subscribe("centroid", 10, &PersonalSpaceDWA::centroidCallback, this);
-    invansion_pub_ = private_nh.advertise<std_msgs::Float64>("invansion", 10);
+    centroid_sub_ = private_nh.subscribe("centroid", 10, &PersonalSpaceDWA::centroidCallback, this);
+    invasion_pub_ = private_nh.advertise<std_msgs::Float64>("invasion", 10);
     // ここまで
 
     //Assuming this planner is being run within the navigation stack, we can
@@ -174,7 +174,7 @@ namespace potbot_nav {
   {
     centroid_x_ = msg->x;
     centroid_y_ = msg->y;
-    ROS_INFO("Received centroid: (%f, %f)", centroid_x_, centroid_y_);
+    // ROS_INFO("Received centroid: (%f, %f)", centroid_x_, centroid_y_);
   }
 
   // used for visualization only, total_costs are not really total costs
@@ -197,10 +197,9 @@ namespace potbot_nav {
         path_distance_bias_ * path_cost; +
         goal_distance_bias_ * goal_cost; +
         occdist_scale_ * occ_cost;
-        // ROS_INFO("total_cost: %f",total_cost);
-        // ROS_INFO("norm_path_cost: %f",norm_path_cost);
-        // ROS_INFO("norm_goal_cost: %f",norm_goal_cost);
-        // ROS_INFO("norm_occ_cost: %f",norm_occ_cost);
+
+        // ROS_INFO("path_cost: %f, goal_cost: %f, occ_cost: %f", path_cost, goal_cost, occ_cost);
+
     return true;
   }
 
@@ -231,7 +230,6 @@ namespace potbot_nav {
     double cost = scored_sampling_planner_.scoreTrajectory(traj, -1);
     //if the trajectory is a legal one... the check passes
     if(cost >= 0) {
-      // ROS_INFO("cost: %f",cost);
       return true;
     }
     ROS_WARN("Invalid Trajectory %f, %f, %f, cost: %f", vel_samples[0], vel_samples[1], vel_samples[2], cost);
@@ -336,20 +334,8 @@ namespace potbot_nav {
 
     result_traj_.cost_ = -1e9;
 
-    // ROS_INFO("result_traj_.cost_: %f",result_traj_.cost_);
-
     // find best trajectory by sampling and scoring the samples
     scored_sampling_planner_.findBestTrajectory(result_traj_, &all_explored);
-
-    //result_traj_は何を格納した変数？
-    //calculateDWACostWithPersonalSpace()はresult_traj_を受け取るのでいいの？
-    //calculateDWACostWithPersonalSpace()でresult_traj_を受け取ったあとのresult_traj_の使い方は適切？
-    //障害物(今回は歩行者)とロボットの相対的な位置があれば大丈夫！
-    // double custom_score = calculateDWACostWithPersonalSpace(all_explored);
-
-    // ROS_INFO("custom score: %f", custom_score);
-
-  
 
     if(publish_traj_pc_)
     {
@@ -405,7 +391,6 @@ namespace potbot_nav {
     // パーソナルスペースを考慮したコスト計算
     double custom_score = calculateDWACostWithPersonalSpace(all_explored, pedestrian_pos, pos);
     result_traj_.cost_ += custom_score;
-    // ROS_INFO("result_traj_.cost_: %f",result_traj_.cost_);
 
     //if we don't have a legal trajectory, we'll just command zero
     if (result_traj_.cost_ < 0) {
@@ -425,8 +410,6 @@ namespace potbot_nav {
       q.setRPY(0, 0, result_traj_.thetav_);
       tf2::convert(q, drive_velocities.pose.orientation);
     }
-    // ROS_INFO("result_traj_ cost: %f", result_traj_.cost_);
-    // ROS_INFO("best_score: %f", custom_score);
     return result_traj_;
   }
 
@@ -435,8 +418,9 @@ namespace potbot_nav {
     const Eigen::Vector3f& pedestrian_pos,
     const Eigen::Vector3f& robot_pos) 
   {
-      double min_ps_cost = std::numeric_limits<double>::max(); // 初期値は非常に小さな値
-      double invansion = 0.0;
+      double trajectory_ps_cost = 0.0;
+      double current_invasion = 0.0;
+      const double max_focus_distance = 6.0;
       for (const auto& traj : trajectories) 
       {
 
@@ -450,16 +434,29 @@ namespace potbot_nav {
               double p_x, p_y, p_th;
               traj.getPoint(i, p_x, p_y, p_th);
 
+              // 現在位置からの距離を計算
+            double dx = p_x - robot_pos[0];
+            double dy = p_y - robot_pos[1];
+            double distance_from_robot = std::sqrt(dx * dx + dy * dy);
+
+            // 6mを超えるポイントはスキップ
+            if (distance_from_robot > max_focus_distance) 
+            {
+                continue;
+            }
+
               // 歩行者の位置と未来の軌道の計算
-              double dx = pedestrian_pos[0] - p_x;
-              double dy = pedestrian_pos[1] - p_y;
+              double pedestrian_dx = pedestrian_pos[0] - p_x;
+              double pedestrian_dy = pedestrian_pos[1] - p_y;
 
               // 現在のロボットと歩行者の相対ベクトルの計算
-              // double dx = pedestrian_pos[0] - robot_pos[0];
-              // double dy = pedestrian_pos[1] - robot_pos[1];
+              double invasion_x = pedestrian_pos[0] - robot_pos[0];
+              double invasion_y = pedestrian_pos[1] - robot_pos[1];
 
-              double distance = std::sqrt(dx * dx + dy * dy);
-              // ROS_INFO("distance: %f",distance);
+              double invasion_distance = std::sqrt(invasion_x * invasion_x + invasion_y * invasion_y);
+
+              // ROS_INFO("pedestrian_pose: (%f, %f)", pedestrian_pos[0], pedestrian_pos[1]);
+              // ROS_INFO("robot_pose: (%f, %f)", robot_pos[0], robot_pos[1]);
 
               // 角度を0-180度範囲に正規化
               double theta = std::atan2(dy, dx) - p_th;
@@ -468,248 +465,54 @@ namespace potbot_nav {
               while (theta < -M_PI) theta += 2 * M_PI;
 
               double personal_space_radius;
-              
 
               if (std::abs(theta) <= M_PI / 2) {
                 // 歩行者の前方の楕円形パーソナルスペース
-                personal_space_radius = std::sqrt(std::pow(dx / (lf_scale_), 2) + std::pow(dy / (ls_scale_), 2));
+                personal_space_radius = std::sqrt(std::pow(pedestrian_dx / (lf_scale_), 2) + std::pow(pedestrian_dy / (ls_scale_+0.1), 2));
               } else {
                 // 歩行者の後方の円形パーソナルスペース
-                personal_space_radius = std::sqrt(std::pow(dx, 2) + std::pow(dy, 2)) / (ls_scale_ * ls_scale_ );
+                personal_space_radius = std::sqrt(std::pow(pedestrian_dx, 2) + std::pow(pedestrian_dy, 2)) / (ls_scale_+ 0.1);
               }
 
               // Avoid division by zero
-              if (personal_space_radius < 1e-9) continue;
 
-              double current_invansion = personal_space_radius / distance;
-              invansion = std::max(invansion, current_invansion); // 最大侵入値を記録
-              // ROS_INFO("invansion:%f",invansion);
+              if (std::abs(invasion_distance) < 0.05) 
+              {
+                // ロボットと歩行者の座標がほぼ一致している場合
+                current_invasion = 0.0;
+              } else if (1 <= personal_space_radius) 
+              {
+                // パーソナルスペース外では侵略率0%
+                current_invasion = 0.0;
+              } else 
+              {
+                // 通常の侵略率計算
+                current_invasion = (1.0 - (invasion_distance / personal_space_radius)) * 100;
+              }
+
+              // ROS_INFO("dx: %f, dy: %f", invasion_x, invasion_y);
+              // ROS_INFO("PS: %f", personal_space_radius);
+              // ROS_INFO("distance: %f, invasion: %f", invasion_distance, current_invasion);
 
 
               // Calculate cost using the exponential function
-              // double ps_cost = std::exp(ps_weight_ * (1.0 / personal_space_radius));
-
               double current_ps_cost = std::exp(ps_weight_ * (1.0 / personal_space_radius));
-              min_ps_cost = std::min(min_ps_cost, current_ps_cost); // 最大コストを記録
-              ROS_INFO("ps_cost: %f",min_ps_cost);
+              current_ps_cost = ps_weight_ * current_ps_cost - ps_weight_;  //ps_weightをかけたあとにps_weightで引く
               
+              // // 制約を追加：ps_costが300を超えた場合、300に制限
+              // if (current_ps_cost > 300.0) {
+              //     current_ps_cost = 300.0;
+              // }
+
+              trajectory_ps_cost += current_ps_cost;
+
             }
+            trajectory_ps_cost /= traj.getPointsSize();
+            // ROS_INFO("ps_cost: %f", trajectory_ps_cost);
         }
-        std_msgs::Float64 invansion_msg;
-        invansion_msg.data = invansion;
-        invansion_pub_.publish(invansion_msg);
-        return min_ps_cost;
+        std_msgs::Float64 invasion_msg;
+        invasion_msg.data = current_invasion;
+        invasion_pub_.publish(invasion_msg);
+        return trajectory_ps_cost;
   }
 }
-
-//追加したコード
-// ここから
-
-// void PersonalSpaceDWA::updateObstaclesFromClusters(potbot_nav::StateLayer& state_layer) 
-// {   
-//     const auto& clusters_obstaclearray = state_layer.getClustersObstacleArray();
-//     ROS_INFO("Number of clusters: %zu", clusters_obstaclearray.data.size());
-
-//     std::vector<Pedestrian> peds;
-
-//     double yaw = PersonalSpaceDWA::estimatePedestrianOrientationFromClusters(clusters_obstaclearray);
-
-//     ROS_INFO("updateObstaclesFromClusters called");
-//     ROS_INFO("Estimated pedestrian orientation (yaw): %f", yaw);
-
-
-//     for (const auto& obstacle : clusters_obstaclearray.data) 
-//     {
-//         // 各障害物の座標 (x, y) を取得
-//         double x = obstacle.pose.position.x;
-//         double y = obstacle.pose.position.y;
-
-//         // 歩行者データを生成
-//         Pedestrian ped;
-
-//         ped.yaw = yaw;
-
-//         peds.push_back(ped);
-
-//         // 障害物を設置
-//         setObstacle(x, y);
-//     }
-    
-//     current_pedestrians_ = peds;
-//     ROS_INFO("Adding pedestrian: yaw=%f", yaw);
-// }
-
-
-
-// double PersonalSpaceDWA::calculatePersonalSpaceCost(const base_local_planner::Trajectory& traj)
-// {
-//   double max_cost = 0.0;
-//   const std::vector<Pedestrian>& pedestrians = current_pedestrians_;
-
-//   // ROS_INFO("Debugging calculatePersonalSpaceCost:");
-//   // ROS_INFO("  Number of pedestrians: %zu", current_pedestrians_.size());
-
-//   for (unsigned int i = 0; i < traj.getPointsSize(); ++i)
-//   {
-//     double x, y, th;
-//     traj.getPoint(i, x, y, th); //trajのi番目のポイントを取得
-//     // ROS_INFO("  Trajectory point: x=%f, y=%f", x, y);
-//     geometry_msgs::Point point;
-//     point.x = x;
-//     point.y = y;
-//     for (const auto& pedestrian : pedestrians) 
-//     {
-//       ROS_INFO("  Pedestrian position: x=%f, y=%f, yaw=%f", pedestrian.x, pedestrian.y, pedestrian.yaw);
-//       double invasion = calculatePersonalSpaceInvasion(point, pedestrian);
-//       double cost = calculateCostFromInvasion(invasion);
-//       max_cost = std::max(max_cost, cost);
-//     }
-//   }
-//   // ROS_INFO("Maximum personal space cost: %f", max_cost);
-//   return max_cost;
-// }
-
-// double PersonalSpaceDWA::calculatePersonalSpaceInvasion(const geometry_msgs::Point& point, const Pedestrian& pedestrian)
-// { 
-//   for(auto& coord_obstacle : obstacles_)
-//   {   
-//       double x_obstacle = coord_obstacle.x;
-//       double y_obstacle = coord_obstacle.y;
-
-//       double dx = point.x - x_obstacle;
-//       double dy = point.y - y_obstacle;
-//       double theta = std::atan2(dy, dx) - pedestrian.yaw;
-//       ROS_INFO("dx: %f", dx);
-//       ROS_INFO("dy: %f", dy);
-  
-
-//         while (theta > M_PI) theta -= 2 * M_PI;
-//         while (theta < -M_PI) theta += 2 * M_PI;
-
-//       if (std::abs(theta) <= M_PI / 2) {
-//         // 歩行者の前方の楕円形パーソナルスペース
-//         return std::sqrt(std::pow(dx / (lf_scale_ * lf_scale_), 2) + std::pow(dy / (ls_scale_ * ls_scale_), 2));
-//       } else {
-//         // 歩行者の後方の円形パーソナルスペース
-//         return std::sqrt(std::pow(dx, 2) + std::pow(dy, 2)) / (ls_scale_ * ls_scale_ );
-//       }
-//   }
-// }
-
-// double PersonalSpaceDWA::calculateCostFromInvasion(double invasion)
-//  {
-//       if (invasion <= 0.5) {
-//         return 254.0;  // 最大コスト（障害物と同等）
-//       } else {
-//         return 254.0 / (invasion+1e-100);  // 距離に応じてコストを減少
-//       }
-//   }
-
-// double PersonalSpaceDWA::calculateDWACostWithPersonalSpace(const std::vector<base_local_planner::Trajectory>& all_explored)
-//  {
-//     double best_total_score = -DBL_MAX;
-//     base_local_planner::Trajectory* best_traj = nullptr;
-    
-//     // すべての軌道を評価
-//     for (const auto& traj : all_explored) {
-//           base_local_planner::Trajectory traj_copy = traj;
-//       if (traj.cost_ < 0) continue;
-        
-//         // パーソナルスペースコストの計算
-//         double ps_cost = calculatePersonalSpaceCost(traj);
-
-//         double base_score = scored_sampling_planner_.scoreTrajectory(traj_copy, DBL_MAX);
-
-//         double normalized_ps_cost = ps_cost / 254.0;
-        
-//         // 総合コストの計算
-//         double total_score = (1 - ps_weight_) * base_score - ps_weight_ * ps_cost;
-
-//         if (total_score > best_total_score) {
-//             best_total_score = total_score;
-//             best_traj = &traj_copy;
-        
-//         // デバッグ情報の出力
-//         // ROS_INFO("  base_score: %f", base_score);
-//         // ROS_INFO("  ps_cost: %f", ps_cost);
-//         // ROS_INFO("  normalized_ps_cost: %f", normalized_ps_cost);
-//         // ROS_INFO("  total_cost: %f", total_score);
-//     }
-//     }
-    
-//     if (best_traj != nullptr) {
-//         result_traj_ = *best_traj;
-//         return best_total_score;
-//     }
-    
-//     return -1.0;
-// }
-
- 
-
-// double PersonalSpaceDWA::estimatePedestrianOrientationFromClusters(const potbot_msgs::ObstacleArray& clusters_obstaclearray) 
-// {
-//     double sum_yaw = 0;
-//     int count = 0;
-
-//     // 周辺の障害物を探索し、向きを推定
-//     for (const auto& obstacle : clusters_obstaclearray.data) 
-//     {
-//         // 障害物のIDを取得
-//         int id = obstacle.id; // 障害物の識別子 (クラスタリングによってIDが付与される前提)
-
-//         double current_x = obstacle.pose.position.x;
-//         double current_y = obstacle.pose.position.y;
-
-//         // 前回の位置が存在するか確認
-//         if (previous_positions.find(id) != previous_positions.end()) 
-//         {
-//           // 前回の位置を取得
-//             double previous_x = previous_positions[id].first;
-//             double previous_y = previous_positions[id].second;
-
-//             // 差分を計算
-//             double dx = current_x - previous_x;
-//             double dy = current_y - previous_y;
-
-//             // yaw角を計算 (進行方向)
-//             double yaw = std::atan2(dy, dx);
-
-//             // 近傍の障害物のみを考慮（距離閾値 1.0）
-//             double distance = std::sqrt(dx * dx + dy * dy);
-//             if (distance < 1.0) 
-//             {
-//                 sum_yaw += yaw;
-//                 count++;
-//             }
-
-            
-//         }
-
-//         // 現在の位置を次のステップ用に保存
-//         previous_positions[id] = {current_x, current_y};
-//     }
-
-//           if (count > 0) 
-//           {
-//               return sum_yaw / count; // 平均的なyaw角を返す
-//           }
-
-//           return 0.0; // デフォルト値（向き不明の場合）
-// }
-
-
-// double PersonalSpaceDWA::calculateTotalPersonalSpaceViolation(const geometry_msgs::Point& robot_pos) 
-// {
-//     double total_violation = 0.0;
-
-//     for (const auto& pedestrian : current_pedestrians_) 
-//     {
-//         double violation = calculatePersonalSpaceInvasion(robot_pos, pedestrian);
-//         total_violation += violation;
-//     }
-
-//     return total_violation;
-// }
-
-// };
