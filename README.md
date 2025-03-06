@@ -1,7 +1,7 @@
 # potbot_core
 cd ~/catkin_ws/src
 
-git clone https://github.com/kitasame/potbot_core.git
+git clone -b personal_space https://github.com/kitasame/potbot_core.git
 
 
 sudo apt update
